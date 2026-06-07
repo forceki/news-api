@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/forceki/Documents/playground/test-news/.claude/skills"
+    ],
+    "allow": [
+      "Edit(/.claude/skills/analyze-codebase/**)"
+    ]
+  }
+}
