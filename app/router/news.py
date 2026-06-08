@@ -2,7 +2,7 @@ from typing import Optional
 
 from app.core.response import success_response
 from app.core.security import DepCurrentUser
-from app.schemas.news import NewsCreateRequest, NewsResponse, NewsUpdateRequest
+from app.schemas.news import NEWS_STATUS_MAP, NewsCreateRequest, NewsResponse, NewsUpdateRequest
 from app.schemas.topic import TopicResponse
 from app.services.news import DepNewsService
 from fastapi import APIRouter, status
@@ -17,6 +17,7 @@ def _to_response(news) -> dict:
         slug=news.slug,
         content=news.content,
         status=news.status,
+        status_name=NEWS_STATUS_MAP.get(news.status, "unknown"),
         published_at=news.published_at,
         author_id=news.author_id,
         created_by=news.created_by,

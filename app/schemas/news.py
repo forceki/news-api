@@ -22,12 +22,20 @@ class NewsUpdateRequest(BaseModel):
     topic_ids: Optional[list[int]] = None
 
 
+NEWS_STATUS_MAP = {
+    0: "draft",
+    1: "published",
+    2: "deleted",
+}
+
+
 class NewsResponse(BaseModel):
     id: int
     title: str
     slug: str
     content: str
     status: int
+    status_name: str = ""
     published_at: Optional[datetime] = None
     author_id: int
     created_by: Optional[int] = None
