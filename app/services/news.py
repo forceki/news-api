@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import Depends
 
+from app.core.cache import cache
 from app.core.exception import AppError
+from app.core.slug import slugify
 from app.model.news import News
 from app.repository.news import DepNewsRepository, NewsRepository
 from app.schemas.news import NewsCreateRequest, NewsUpdateRequest
@@ -15,6 +17,18 @@ class NewsService:
 
     async def get_all(self) -> list[News]:
         return await self.news_repo.get_all()
+
+    async def get_all_public(
+        self,
+        status: Optional[int] = None,
+        topic_id: Optional[int] = None,
+        search: Optional[str] = None,
+        page: int = 1,
+        limit: int = 10,
+    ) -> tuple[list[News], int]:
+        return await self.news_repo.get_all_public(
+            status=status, topic_id=topic_id, search=search, page=page, limit=limit
+        )
 
     async def get_by_id(self, news_id: int) -> News:
         news = await self.news_repo.get_by_id(news_id)
@@ -37,7 +51,9 @@ class NewsService:
         return news
 
     async def create(self, data: NewsCreateRequest, user_id: int) -> News:
-        if await self.news_repo.get_by_slug(data.slug):
+        slug = slugify(data.title)
+
+        if await self.news_repo.get_by_slug(slug):
             raise AppError(
                 message="News slug already exists",
                 status_code=409,
@@ -56,7 +72,7 @@ class NewsService:
 
         news = News(
             title=data.title,
-            slug=data.slug,
+            slug=slug,
             content=data.content,
             status=data.status,
             published_at=data.published_at,
@@ -64,23 +80,24 @@ class NewsService:
             created_by=user_id,
             topics=topics,
         )
-        return await self.news_repo.create(news)
+        result = await self.news_repo.create(news)
+        cache.invalidate_prefix("public:news:")
+        return result
 
     async def update(self, news_id: int, data: NewsUpdateRequest, user_id: int) -> News:
         news = await self.get_by_id(news_id)
 
-        if data.slug and data.slug != news.slug:
-            existing = await self.news_repo.get_by_slug(data.slug)
-            if existing:
-                raise AppError(
-                    message="News slug already exists",
-                    status_code=409,
-                    code="NEWS_SLUG_EXISTS",
-                )
-            news.slug = data.slug
-
-        if data.title is not None:
+        if data.title is not None and data.title != news.title:
             news.title = data.title
+            new_slug = slugify(data.title)
+            if new_slug != news.slug:
+                if await self.news_repo.get_by_slug(new_slug):
+                    raise AppError(
+                        message="News slug already exists",
+                        status_code=409,
+                        code="NEWS_SLUG_EXISTS",
+                    )
+                news.slug = new_slug
         if data.content is not None:
             news.content = data.content
         if data.status is not None:
@@ -99,11 +116,14 @@ class NewsService:
             news.topics = topics
 
         news.updated_at = datetime.now(timezone.utc)
-        return await self.news_repo.update(news)
+        result = await self.news_repo.update(news)
+        cache.invalidate_prefix("public:news:")
+        return result
 
     async def delete(self, news_id: int) -> None:
         news = await self.get_by_id(news_id)
         await self.news_repo.delete(news)
+        cache.invalidate_prefix("public:news:")
 
 
 def get_news_service(news_repo: DepNewsRepository) -> NewsService:

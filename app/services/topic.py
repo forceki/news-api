@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.exception import AppError
+from app.core.slug import slugify
 from app.model.topic import Topic
 from app.repository.topic import DepTopicRepository, TopicRepository
 from app.schemas.topic import TopicCreateRequest, TopicUpdateRequest
@@ -27,13 +28,15 @@ class TopicService:
         return topic
 
     async def create(self, data: TopicCreateRequest, user_id: int) -> Topic:
+        slug = slugify(data.name)
+
         if await self.topic_repo.get_by_name(data.name):
             raise AppError(
                 message="Topic name already exists",
                 status_code=409,
                 code="TOPIC_NAME_EXISTS",
             )
-        if await self.topic_repo.get_by_slug(data.slug):
+        if await self.topic_repo.get_by_slug(slug):
             raise AppError(
                 message="Topic slug already exists",
                 status_code=409,
@@ -42,7 +45,7 @@ class TopicService:
 
         topic = Topic(
             name=data.name,
-            slug=data.slug,
+            slug=slug,
             created_by=user_id,
         )
         return await self.topic_repo.create(topic)
@@ -59,16 +62,15 @@ class TopicService:
                     code="TOPIC_NAME_EXISTS",
                 )
             topic.name = data.name
-
-        if data.slug and data.slug != topic.slug:
-            existing = await self.topic_repo.get_by_slug(data.slug)
-            if existing:
-                raise AppError(
-                    message="Topic slug already exists",
-                    status_code=409,
-                    code="TOPIC_SLUG_EXISTS",
-                )
-            topic.slug = data.slug
+            new_slug = slugify(data.name)
+            if new_slug != topic.slug:
+                if await self.topic_repo.get_by_slug(new_slug):
+                    raise AppError(
+                        message="Topic slug already exists",
+                        status_code=409,
+                        code="TOPIC_SLUG_EXISTS",
+                    )
+                topic.slug = new_slug
 
         topic.updated_by = user_id
         topic.updated_at = datetime.now(timezone.utc)

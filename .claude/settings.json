@@ -1,10 +1,12 @@
 {
   "permissions": {
+    "allow": [
+      "Edit(/.claude/skills/analyze-codebase/**)",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)"
+    ],
     "additionalDirectories": [
       "/Users/forceki/Documents/playground/test-news/.claude/skills"
-    ],
-    "allow": [
-      "Edit(/.claude/skills/analyze-codebase/**)"
     ]
   }
 }

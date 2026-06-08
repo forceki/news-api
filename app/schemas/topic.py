@@ -6,12 +6,10 @@ from pydantic import BaseModel
 
 class TopicCreateRequest(BaseModel):
     name: str
-    slug: str
 
 
 class TopicUpdateRequest(BaseModel):
     name: Optional[str] = None
-    slug: Optional[str] = None
 
 
 class TopicResponse(BaseModel):

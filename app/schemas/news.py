@@ -8,7 +8,6 @@ from app.schemas.topic import TopicResponse
 
 class NewsCreateRequest(BaseModel):
     title: str
-    slug: str
     content: str
     status: int = 1
     published_at: Optional[datetime] = None
@@ -17,7 +16,6 @@ class NewsCreateRequest(BaseModel):
 
 class NewsUpdateRequest(BaseModel):
     title: Optional[str] = None
-    slug: Optional[str] = None
     content: Optional[str] = None
     status: Optional[int] = None
     published_at: Optional[datetime] = None

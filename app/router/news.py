@@ -1,3 +1,5 @@
+from typing import Optional
+
 from app.core.response import success_response
 from app.core.security import DepCurrentUser
 from app.schemas.news import NewsCreateRequest, NewsResponse, NewsUpdateRequest
@@ -28,11 +30,28 @@ def _to_response(news) -> dict:
 
 
 @router.get("")
-async def get_all_news(news_service: DepNewsService, current_user: DepCurrentUser):
-    news_list = await news_service.get_all()
+async def get_all_news(
+    news_service: DepNewsService,
+    current_user: DepCurrentUser,
+    topic_id: Optional[int] = None,
+    news_status: Optional[int] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 10,
+):
+    news_list, total = await news_service.get_all_public(
+        status=news_status, topic_id=topic_id, search=search, page=page, limit=limit
+    )
+    metadata = {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
+    }
     return success_response(
         data=[_to_response(n) for n in news_list],
         message="News retrieved successfully",
+        metadata=metadata,
     )
 
 

@@ -15,6 +15,7 @@ class Env(BaseSettings):
     DATABASE_URL: str
     OPENAI_API_KEY: str
     OTEL_EXPORTER_OTLP_ENDPOINT: str
+    REDIS_URL: str = "redis://localhost:6379/0"
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 30

@@ -1,7 +1,7 @@
 from typing import Annotated, Optional
 
 from fastapi import Depends
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,34 @@ class NewsRepository:
             select(News).options(selectinload(News.topics)).order_by(News.id.desc())
         )
         return list(result.scalars().all())
+
+    async def get_all_public(
+        self,
+        status: Optional[int] = None,
+        topic_id: Optional[int] = None,
+        search: Optional[str] = None,
+        page: int = 1,
+        limit: int = 10,
+    ) -> tuple[list[News], int]:
+        query = select(News).options(selectinload(News.topics))
+
+        if status is not None:
+            query = query.where(News.status == status)
+        if topic_id is not None:
+            query = query.join(news_topics).where(news_topics.c.topic_id == topic_id)
+        if search:
+            query = query.where(News.title.ilike(f"%{search}%"))
+
+        # Count total
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Paginate
+        offset = (page - 1) * limit
+        query = query.order_by(News.id.desc()).offset(offset).limit(limit)
+        result = await self.db.execute(query)
+        return list(result.scalars().all()), total
 
     async def get_by_id(self, news_id: int) -> Optional[News]:
         result = await self.db.execute(

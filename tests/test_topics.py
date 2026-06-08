@@ -6,7 +6,6 @@ class TestCreateTopic:
     async def test_create_topic_success(self, client: AsyncClient, auth_token):
         response = await client.post("/topics", json={
             "name": "Technology",
-            "slug": "technology",
         }, headers=auth_token)
         assert response.status_code == 201
         data = response.json()
@@ -14,44 +13,33 @@ class TestCreateTopic:
         assert data["data"]["name"] == "Technology"
         assert data["data"]["slug"] == "technology"
 
+    async def test_create_topic_auto_slug(self, client: AsyncClient, auth_token):
+        response = await client.post("/topics", json={
+            "name": "Machine Learning",
+        }, headers=auth_token)
+        assert response.status_code == 201
+        assert response.json()["data"]["slug"] == "machine-learning"
+
     async def test_create_topic_unauthenticated(self, client: AsyncClient):
         response = await client.post("/topics", json={
             "name": "Technology",
-            "slug": "technology",
         })
         assert response.status_code == 401
 
     async def test_create_topic_duplicate_name(self, client: AsyncClient, auth_token):
-        await client.post("/topics", json={
-            "name": "Technology",
-            "slug": "technology",
-        }, headers=auth_token)
+        await client.post("/topics", json={"name": "Technology"}, headers=auth_token)
 
         response = await client.post("/topics", json={
             "name": "Technology",
-            "slug": "tech-2",
         }, headers=auth_token)
         assert response.status_code == 409
         assert response.json()["error_code"] == "TOPIC_NAME_EXISTS"
 
-    async def test_create_topic_duplicate_slug(self, client: AsyncClient, auth_token):
-        await client.post("/topics", json={
-            "name": "Technology",
-            "slug": "technology",
-        }, headers=auth_token)
-
-        response = await client.post("/topics", json={
-            "name": "Tech News",
-            "slug": "technology",
-        }, headers=auth_token)
-        assert response.status_code == 409
-        assert response.json()["error_code"] == "TOPIC_SLUG_EXISTS"
-
 
 class TestGetTopics:
     async def test_get_all_topics(self, client: AsyncClient, auth_token):
-        await client.post("/topics", json={"name": "Tech", "slug": "tech"}, headers=auth_token)
-        await client.post("/topics", json={"name": "Sports", "slug": "sports"}, headers=auth_token)
+        await client.post("/topics", json={"name": "Tech"}, headers=auth_token)
+        await client.post("/topics", json={"name": "Sports"}, headers=auth_token)
 
         response = await client.get("/topics", headers=auth_token)
         assert response.status_code == 200
@@ -63,7 +51,7 @@ class TestGetTopics:
 
     async def test_get_topic_by_id(self, client: AsyncClient, auth_token):
         create_resp = await client.post("/topics", json={
-            "name": "Tech", "slug": "tech",
+            "name": "Tech",
         }, headers=auth_token)
         topic_id = create_resp.json()["data"]["id"]
 
@@ -80,7 +68,7 @@ class TestGetTopics:
 class TestUpdateTopic:
     async def test_update_topic_success(self, client: AsyncClient, auth_token):
         create_resp = await client.post("/topics", json={
-            "name": "Tech", "slug": "tech",
+            "name": "Tech",
         }, headers=auth_token)
         topic_id = create_resp.json()["data"]["id"]
 
@@ -89,6 +77,19 @@ class TestUpdateTopic:
         }, headers=auth_token)
         assert response.status_code == 200
         assert response.json()["data"]["name"] == "Technology Updated"
+        assert response.json()["data"]["slug"] == "technology-updated"
+
+    async def test_update_topic_auto_slug_on_name_change(self, client: AsyncClient, auth_token):
+        create_resp = await client.post("/topics", json={
+            "name": "Tech",
+        }, headers=auth_token)
+        topic_id = create_resp.json()["data"]["id"]
+
+        response = await client.put(f"/topics/{topic_id}", json={
+            "name": "Data Science",
+        }, headers=auth_token)
+        assert response.status_code == 200
+        assert response.json()["data"]["slug"] == "data-science"
 
     async def test_update_topic_not_found(self, client: AsyncClient, auth_token):
         response = await client.put("/topics/999", json={
@@ -100,7 +101,7 @@ class TestUpdateTopic:
 class TestDeleteTopic:
     async def test_delete_topic_success(self, client: AsyncClient, auth_token):
         create_resp = await client.post("/topics", json={
-            "name": "Tech", "slug": "tech",
+            "name": "Tech",
         }, headers=auth_token)
         topic_id = create_resp.json()["data"]["id"]
 

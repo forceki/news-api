@@ -49,11 +49,12 @@ def success_response(
     data: T,
     message: str = "Operation successful",
     status_code: int = status.HTTP_200_OK,
+    metadata: Optional[dict] = None,
 ) -> JSONResponse:
     """
     Wraps a SuccessResponse in a JSONResponse so FastAPI
     returns the proper HTTP status code.
     """
     payload = SuccessResponse(
-        message=message, data=data).dict(exclude_none=True)
+        message=message, data=data, metadata=metadata).dict(exclude_none=True)
     return JSONResponse(status_code=status_code, content=payload)

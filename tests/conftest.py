@@ -4,9 +4,20 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.schema import DefaultClause
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.cache import cache
+from app.core.cache import InMemoryCache
 from app.core.database import Base, get_db
 from app.core.security import create_access_token
+
+# Override cache with InMemoryCache BEFORE importing app (which imports routers/services)
+import app.core.cache as cache_module
+_test_cache = InMemoryCache()
+cache_module.cache = _test_cache
+
+from app.services import news as news_service_module
+from app.router import public as public_router_module
+news_service_module.cache = _test_cache
+public_router_module.cache = _test_cache
+
 from app.main import app
 
 # In-memory SQLite for tests
@@ -45,7 +56,7 @@ async def setup_database():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    cache._store.clear()
+    _test_cache._store.clear()
 
 
 @pytest.fixture

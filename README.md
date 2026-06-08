@@ -1,6 +1,6 @@
 # FastAPI News API
 
-A news management API built with FastAPI, featuring JWT authentication, topic categorization, and in-memory caching.
+A news management API built with FastAPI, featuring JWT authentication, topic categorization, Redis caching, and auto-generated slugs.
 
 ## Prerequisites
 
@@ -8,6 +8,7 @@ A news management API built with FastAPI, featuring JWT authentication, topic ca
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (package manager)
 - [Moonrepo](https://moonrepo.dev/docs/getting-started/installation) (optional, task runner)
 - PostgreSQL
+- Redis
 - Docker and Docker Compose (optional, for containerized development)
 
 ## Installation
@@ -39,17 +40,18 @@ A news management API built with FastAPI, featuring JWT authentication, topic ca
 
 ## Environment Variables
 
-| Variable                     | Description                          | Default                  |
-|------------------------------|--------------------------------------|--------------------------|
-| `ML_PREFIX_API`              | API root path prefix                 | `/ml-api`                |
-| `APP_NAME`                   | Application name                     | `fastapi-ai`             |
-| `APP_ENVIRONMENT`            | Environment (`development`/`production`) | `development`        |
-| `DATABASE_URL`               | PostgreSQL connection string         | -                        |
-| `OPENAI_API_KEY`             | OpenAI API key                       | -                        |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry exporter endpoint    | `localhost:4317`         |
-| `JWT_SECRET_KEY`             | Secret key for JWT token signing     | -                        |
-| `JWT_ALGORITHM`              | JWT signing algorithm                | `HS256`                  |
-| `JWT_EXPIRATION_MINUTES`     | JWT token expiration in minutes      | `30`                     |
+| Variable                     | Description                              | Default                      |
+|------------------------------|------------------------------------------|------------------------------|
+| `ML_PREFIX_API`              | API root path prefix                     | `/api`                       |
+| `APP_NAME`                   | Application name                         | `news-api`                   |
+| `APP_ENVIRONMENT`            | Environment (`development`/`production`) | `development`                |
+| `DATABASE_URL`               | PostgreSQL connection string             | -                            |
+| `REDIS_URL`                  | Redis connection string                  | `redis://localhost:6379/0`   |
+| `OPENAI_API_KEY`             | OpenAI API key                           | -                            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry exporter endpoint        | `localhost:4317`             |
+| `JWT_SECRET_KEY`             | Secret key for JWT token signing         | -                            |
+| `JWT_ALGORITHM`              | JWT signing algorithm                    | `HS256`                      |
+| `JWT_EXPIRATION_MINUTES`     | JWT token expiration in minutes          | `30`                         |
 
 ## Running the Application
 
@@ -75,7 +77,7 @@ moon fastapi-ai:migrate   # Run migrations
 moon fastapi-ai:seed      # Seed database
 ```
 
-Once running, the Swagger UI is available at `http://localhost:8080/ml-api/docs`.
+Once running, the Swagger UI is available at `http://localhost:8080/api/docs`.
 
 ## API Endpoints
 
@@ -99,19 +101,20 @@ Once running, the Swagger UI is available at `http://localhost:8080/ml-api/docs`
 
 ### News (`/news`) - All endpoints require JWT
 
-| Method | Path             | Description                        |
-|--------|------------------|------------------------------------|
-| GET    | `/news`          | List all news (with topics)        |
-| GET    | `/news/{id}`     | Get news by ID                     |
-| POST   | `/news`          | Create news (accepts `topic_ids`)  |
-| PUT    | `/news/{id}`     | Update news                        |
-| DELETE | `/news/{id}`     | Delete news                        |
+| Method | Path             | Query Params                                       | Description                        |
+|--------|------------------|----------------------------------------------------|------------------------------------|
+| GET    | `/news`          | `topic_id`, `news_status`, `search`, `page`, `limit` | List news with filters & pagination |
+| GET    | `/news/{id}`     |                                                    | Get news by ID                     |
+| POST   | `/news`          |                                                    | Create news (accepts `topic_ids`)  |
+| PUT    | `/news/{id}`     |                                                    | Update news                        |
+| DELETE | `/news/{id}`     |                                                    | Delete news                        |
 
 ### Public (`/public`) - No authentication required
 
-| Method | Path                  | Cache | Description            |
-|--------|-----------------------|-------|------------------------|
-| GET    | `/public/news/{slug}` | 60s   | Get news by slug       |
+| Method | Path                  | Query Params                                       | Cache  | Description              |
+|--------|-----------------------|----------------------------------------------------|--------|--------------------------|
+| GET    | `/public/news`        | `status`, `topic_id`, `search`, `page`, `limit`   | Redis  | List news with filters   |
+| GET    | `/public/news/{slug}` |                                                    | Redis  | Get news by slug         |
 
 ### Other
 
@@ -121,19 +124,33 @@ Once running, the Swagger UI is available at `http://localhost:8080/ml-api/docs`
 | GET    | `/health-check`   | Database connection health check |
 | GET    | `/openai/greetings` | OpenAI greeting example        |
 
+## Slugs
+
+Slugs are **auto-generated** from the `name` (topics) or `title` (news):
+
+```
+"Machine Learning"  →  "machine-learning"
+"Breaking News!"    →  "breaking-news"
+```
+
+- On **create**: slug is generated from name/title
+- On **update**: changing name/title auto-regenerates the slug
+- Slugs are unique and used for public-facing URLs
+
 ## Project Structure
 
 ```
 app/
 ├── core/                   # Core utilities & infrastructure
-│   ├── cache.py            # In-memory TTL cache
+│   ├── cache.py            # Redis cache (fallback: in-memory)
 │   ├── database.py         # SQLAlchemy async engine & session
 │   ├── env.py              # Environment configuration (Pydantic)
 │   ├── exception.py        # Custom AppError exception
 │   ├── instrumentation.py  # OpenTelemetry & Prometheus
 │   ├── logging.py          # Logging with request ID middleware
 │   ├── response.py         # Generic response models
-│   └── security.py         # JWT & bcrypt password utilities
+│   ├── security.py         # JWT & bcrypt password utilities
+│   └── slug.py             # Auto slug generation
 ├── model/                  # SQLAlchemy ORM models
 │   ├── user.py
 │   ├── topic.py
@@ -185,6 +202,20 @@ app/
 - `ix_topics_name` / `ix_topics_slug` (unique) - Fast topic lookups
 - `ix_news_topics_news_id` / `ix_news_topics_topic_id` - Fast junction table joins
 
+## Caching
+
+The API uses **Redis** for caching public endpoints with automatic fallback to in-memory cache if Redis is unavailable.
+
+- **Cache key strategy**: MD5 hash of request path + sorted query params
+- **TTL**: 3600 seconds (1 hour)
+- **Invalidation**: All `public:news:*` keys are flushed on create/update/delete
+- **Fallback**: If Redis connection fails, automatically uses in-memory cache
+
+```
+GET /public/news?page=1&status=1  →  key: public:news:list:<md5hash>
+GET /public/news/my-article       →  key: public:news:slug:<md5hash>
+```
+
 ## Authentication
 
 The API uses JWT Bearer token authentication. To access protected endpoints:
@@ -232,6 +263,20 @@ Response:
   "data": { "user_id": 123 }
 }
 ```
+
+## Testing
+
+```bash
+# Install test dependencies
+uv sync --extra test
+
+# Run tests
+uv run pytest -v
+```
+
+- 48 tests covering auth, topics, news, and public endpoints
+- Uses in-memory SQLite + in-memory cache (no Redis/PostgreSQL needed)
+- CI runs automatically via GitHub Actions on push/PR to main
 
 ## Migration Commands
 
